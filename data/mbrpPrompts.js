@@ -175,5 +175,27 @@ Focus on riding out the specific craving they have right now.
 End with [SESSION_COMPLETE].`
       }
     ]
+  },
+  "panic": {
+    days: [
+      {
+        day: 1,
+        title: "SOS: Panic Button",
+        technique: "3-Minute Urge Surfing",
+        audio: "waves",
+        systemPrompt: `${COMMON_INSTRUCTIONS}
+**MISSION**: EMERGENCY SOS MODE.
+**TIME LIMIT**: Keep this very short (3-5 minutes max).
+
+**SCRIPT STRUCTURE**:
+1.  **Immediate Halt**: "Stop. Don't unlock the phone. Just hold it."
+2.  **Breathe**: "Take 3 deep breaths right now. Inhale... Exhale..."
+3.  **The Wave**: "This urge is just a wave. It feels strong, but it cannot hurt you."
+4.  **Observe**: "Where do you feel the fire? In your thumbs? Your chest? Breathe into that spot."
+5.  **Wait**: "We are going to wait 60 seconds together before you decide to unlock. Ready? Watch the urge." (Pause).
+6.  **Choice**: "The wave is passing. You can now choose: Unlock with purpose, or put it down. The choice is yours."
+7.  **Close**: Output [SESSION_COMPLETE].`
+      }
+    ]
   }
 };
