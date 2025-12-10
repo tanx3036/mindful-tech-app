@@ -38,16 +38,34 @@ export default function SurveyComponent() {
     const totalScore = Object.values(responses).reduce((a, b) => a + b, 0);
     setScore(totalScore);
 
-    let isHighRisk = false;
-    if (gender === 'Boy' && totalScore > 31) isHighRisk = true;
-    if (gender === 'Girl' && totalScore > 33) isHighRisk = true;
+    let riskLevel = 'Low Risk';
+    
+    // Kwon et al (2013) cutoffs
+    if (gender === 'Male') {
+      if (totalScore > 31) riskLevel = 'High Risk';
+      else if (totalScore >= 22) riskLevel = 'Medium Risk';
+    } else {
+      // Female and Others (using Female cutoff as default/safer baseline or strictly Female)
+      // Standard research often puts females at higher risk threshold (33) than males (31).
+      if (totalScore > 33) riskLevel = 'High Risk';
+      else if (totalScore >= 22) riskLevel = 'Medium Risk';
+    }
 
-    setRisk(isHighRisk ? 'High Risk' : 'Normal Range');
+    setRisk(riskLevel);
     
     // Save to localStorage
     if (typeof window !== 'undefined') {
       localStorage.setItem('pre_assessment_score', totalScore);
-      localStorage.setItem('risk_level', isHighRisk ? 'High' : 'Normal');
+      localStorage.setItem('risk_level', riskLevel);
+
+      const history = JSON.parse(localStorage.getItem('assessment_history') || '[]');
+      history.push({
+        date: new Date().toISOString(),
+        score: totalScore,
+        risk: riskLevel,
+        gender: gender
+      });
+      localStorage.setItem('assessment_history', JSON.stringify(history));
     }
     
     setStep('result');
@@ -62,16 +80,22 @@ export default function SurveyComponent() {
         <p className="mb-4 text-gray-600">Please select your gender to begin:</p>
         <div className="flex gap-4">
           <button 
-            onClick={() => handleGenderSelect('Boy')}
+            onClick={() => handleGenderSelect('Male')}
             className="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded transition"
           >
-            Boy
+            Male
           </button>
           <button 
-            onClick={() => handleGenderSelect('Girl')}
+            onClick={() => handleGenderSelect('Female')}
             className="flex-1 bg-pink-500 hover:bg-pink-600 text-white py-2 px-4 rounded transition"
           >
-            Girl
+            Female
+          </button>
+          <button 
+            onClick={() => handleGenderSelect('Other')}
+            className="flex-1 bg-purple-500 hover:bg-purple-600 text-white py-2 px-4 rounded transition"
+          >
+            Other
           </button>
         </div>
       </div>
@@ -79,16 +103,71 @@ export default function SurveyComponent() {
   }
 
   if (step === 'result') {
+    const getRiskColor = (r) => {
+      if (r === 'High Risk') return 'bg-red-100 text-red-800 border-red-200';
+      if (r === 'Medium Risk') return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      return 'bg-green-100 text-green-800 border-green-200';
+    };
+
     return (
-      <div className="max-w-md mx-auto bg-white p-6 rounded-lg shadow-md mt-10 text-center">
-        <h2 className="text-2xl font-bold mb-4 text-gray-800">Assessment Result</h2>
-        <p className="text-lg mb-2">Total Score: <span className="font-bold text-indigo-600">{score}</span></p>
-        <div className={`p-4 rounded-md mb-6 ${risk === 'High Risk' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
-          Your usage level indicates: <strong>{risk}</strong>
+      <div className="max-w-2xl mx-auto bg-white p-8 rounded-xl shadow-lg mt-10">
+        <div className="text-center mb-8">
+          <h2 className="text-3xl font-bold mb-4 text-gray-800">Assessment Result</h2>
+          
+          <div className="flex justify-center items-center gap-4 mb-6">
+            <div className="text-center">
+              <span className="block text-gray-500 text-sm uppercase tracking-wide">Total Score</span>
+              <span className="text-5xl font-bold text-indigo-600">{score}</span>
+              <span className="text-gray-400 text-sm">/ 60</span>
+            </div>
+            
+            <div className={`px-6 py-4 rounded-xl border ${getRiskColor(risk)}`}>
+              <span className="block text-xs font-bold uppercase opacity-70">Risk Level</span>
+              <span className="text-2xl font-bold">{risk}</span>
+            </div>
+          </div>
+
+          <div className="bg-blue-50 p-6 rounded-xl border border-blue-100 text-left space-y-4">
+            <h3 className="font-bold text-blue-900 text-lg flex items-center gap-2">
+              ℹ️ What does this mean?
+            </h3>
+            <p className="text-blue-800 leading-relaxed">
+              {risk === 'High Risk' 
+                ? "Your score suggests a high potential for smartphone addiction. You might be experiencing significant disruption in daily life, work, or sleep due to smartphone use."
+                : risk === 'Medium Risk'
+                ? "Your score indicates moderate usage. While not critical, you may occasionally find yourself distracted or using your phone as a coping mechanism."
+                : "Your score suggests a healthy relationship with your smartphone. You seem to have good control over your usage."}
+            </p>
+          </div>
         </div>
-        <a href="/dashboard" className="inline-block bg-indigo-600 text-white py-2 px-6 rounded hover:bg-indigo-700 transition">
-          Go to Dashboard
-        </a>
+
+        <div className="space-y-6 border-t border-gray-100 pt-8">
+          <h3 className="text-xl font-bold text-gray-800">Psychoeducation: Know the Signs</h3>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <h4 className="font-bold text-gray-700 mb-2">🚩 Common Symptoms</h4>
+              <ul className="list-disc pl-5 space-y-1 text-sm text-gray-600">
+                <li><strong>Compulsive Checking:</strong> Reaching for the phone without a specific reason.</li>
+                <li><strong>Sleep Disruption:</strong> Using screens late at night, affecting sleep quality.</li>
+                <li><strong>Phubbing:</strong> Ignoring people around you to look at your phone.</li>
+                <li><strong>Withdrawal:</strong> Feeling impatient or fretful when the phone is not nearby.</li>
+              </ul>
+            </div>
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <h4 className="font-bold text-gray-700 mb-2">💡 Important Note</h4>
+              <p className="text-sm text-gray-600 leading-relaxed">
+                This assessment is a screening tool, <strong>not a medical diagnosis</strong>. 
+                High scores indicate a need for better digital habits, but if you feel severe distress, anxiety, or depression, please consult a mental health professional.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-10 text-center">
+          <a href="/dashboard" className="inline-block w-full md:w-auto bg-indigo-600 text-white font-bold py-4 px-10 rounded-xl hover:bg-indigo-700 transition shadow-md hover:shadow-lg transform hover:-translate-y-0.5">
+            Go to Dashboard & Start Training
+          </a>
+        </div>
       </div>
     );
   }

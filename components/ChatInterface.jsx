@@ -11,6 +11,7 @@ export default function ChatInterface({ programType, day, systemPrompt, title, a
   const [loading, setLoading] = useState(false);
   const [sessionComplete, setSessionComplete] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [currentAudio, setCurrentAudio] = useState(audioKey || 'rain');
   const [progress, setProgress] = useState(0); // 0 to 100 for current session step
   
   // Post-Session Survey State
@@ -23,11 +24,15 @@ export default function ChatInterface({ programType, day, systemPrompt, title, a
   const audioRef = useRef(null);
   const router = useRouter();
 
-  const totalDays = MBRP_PROGRAMS[programType]?.days.length || 1;
-  const dayProgress = (day / totalDays) * 100;
+  const isPanicMode = programType === 'panic';
+  const totalDays = isPanicMode ? 1 : (MBRP_PROGRAMS[programType]?.days.length || 1);
+  
+  const audioOptions = Object.keys(AUDIO_MAP);
 
-  // Audio source resolution
-  const audioSrc = AUDIO_MAP[audioKey] || AUDIO_MAP['rain']; // Default to rain if key not found
+  const [showResumeModal, setShowResumeModal] = useState(false);
+
+  // Resume Key
+  const storageKey = `session_state_${programType}_${day}`;
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -43,36 +48,75 @@ export default function ChatInterface({ programType, day, systemPrompt, title, a
       audioRef.current.volume = 0.3; 
     }
 
-    // Initial start message
-    const startSession = async () => {
-      if (messages.length > 0) return;
-      
-      setLoading(true);
-      try {
-        const res = await fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prompt: "The user has joined. Please greet them and start Step 1.",
-            systemPrompt: systemPrompt,
-            history: []
-          })
-        });
-        
-        if (!res.ok) throw new Error('Failed to start session');
-        
-        const data = await res.json();
-        setMessages([{ role: 'model', content: data.text }]);
-      } catch (error) {
-        console.error("Error starting session:", error);
-        setMessages([{ role: 'model', content: "Hello. I'm ready to guide you. Please say 'Ready' to begin." }]);
-      } finally {
-        setLoading(false);
+    // Check for saved session
+    const saved = localStorage.getItem(storageKey);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed.messages && parsed.messages.length > 0) {
+        setShowResumeModal(true);
+        return; // Wait for user choice
       }
-    };
+    }
 
+    // Initial start message if no saved session or user chose to restart (handled separately)
     startSession();
   }, [systemPrompt]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Save state on message update
+  useEffect(() => {
+    if (messages.length > 0) {
+      localStorage.setItem(storageKey, JSON.stringify({
+        messages,
+        progress,
+        timestamp: new Date().toISOString()
+      }));
+    }
+  }, [messages, progress, storageKey]);
+
+  const startSession = async () => {
+    if (messages.length > 0) return;
+    
+    setLoading(true);
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: "The user has joined. Please greet them and start Step 1.",
+          systemPrompt: systemPrompt,
+          history: []
+        })
+      });
+      
+      if (!res.ok) throw new Error('Failed to start session');
+      
+      const data = await res.json();
+      setMessages([{ role: 'model', content: data.text }]);
+    } catch (error) {
+      console.error("Error starting session:", error);
+      setMessages([{ role: 'model', content: "Hello. I'm ready to guide you. Please say 'Ready' to begin." }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResume = () => {
+    const saved = localStorage.getItem(storageKey);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      setMessages(parsed.messages);
+      setProgress(parsed.progress || 0);
+    }
+    setShowResumeModal(false);
+  };
+
+  const handleRestart = () => {
+    localStorage.removeItem(storageKey);
+    setMessages([]);
+    setProgress(0);
+    setShowResumeModal(false);
+    startSession();
+  };
 
   const toggleAudio = () => {
     if (audioRef.current) {
@@ -83,6 +127,16 @@ export default function ChatInterface({ programType, day, systemPrompt, title, a
       }
       setIsPlaying(!isPlaying);
     }
+  };
+
+  const changeAudio = (newKey) => {
+    setCurrentAudio(newKey);
+    // Wait for state update then play if already playing
+    setTimeout(() => {
+      if (isPlaying && audioRef.current) {
+        audioRef.current.play();
+      }
+    }, 100);
   };
 
   const downloadHistory = () => {
@@ -115,6 +169,9 @@ export default function ChatInterface({ programType, day, systemPrompt, title, a
     });
     localStorage.setItem('session_history', JSON.stringify(history));
     
+    // Clear temporary saved state
+    localStorage.removeItem(storageKey);
+
     router.push('/dashboard');
   };
 
@@ -163,25 +220,64 @@ export default function ChatInterface({ programType, day, systemPrompt, title, a
   };
 
   return (
-    <div className="flex flex-col h-[600px] bg-gray-50 rounded-xl overflow-hidden shadow-lg border border-gray-200 relative">
-      <audio ref={audioRef} loop src={audioSrc} />
+    <div className={`flex flex-col h-[600px] bg-gray-50 rounded-xl overflow-hidden shadow-lg border relative ${isPanicMode ? 'border-red-200' : 'border-gray-200'}`}>
+      <audio ref={audioRef} loop src={AUDIO_MAP[currentAudio] || AUDIO_MAP['rain']} />
+
+      {/* Resume Modal */}
+      {showResumeModal && (
+        <div className="absolute inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl animate-in zoom-in duration-200">
+            <h3 className="text-xl font-bold text-gray-800 mb-2">Resume Session?</h3>
+            <p className="text-gray-600 mb-6 text-sm">
+              We found a session in progress. Would you like to continue where you left off or start over?
+            </p>
+            <div className="flex gap-3">
+              <button 
+                onClick={handleRestart}
+                className="flex-1 py-2.5 px-4 border border-gray-300 rounded-xl text-gray-600 font-medium hover:bg-gray-50 transition"
+              >
+                Restart
+              </button>
+              <button 
+                onClick={handleResume}
+                className="flex-1 py-2.5 px-4 bg-teal-600 text-white rounded-xl font-bold hover:bg-teal-700 shadow-md transition"
+              >
+                Resume
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Header & Progress */}
-      <div className="bg-white p-4 border-b border-gray-200">
+      <div className={`${isPanicMode ? 'bg-red-50' : 'bg-white'} p-4 border-b border-gray-200`}>
         <div className="flex justify-between items-center mb-2">
           <div className="flex items-center gap-3">
-             <h2 className="font-semibold text-gray-800">{title}</h2>
-             <span className="text-xs font-mono bg-gray-100 px-2 py-1 rounded text-gray-500">Day {day}/{totalDays}</span>
+             <h2 className={`font-semibold ${isPanicMode ? 'text-red-700' : 'text-gray-800'}`}>
+               {isPanicMode ? '🚨 Panic Mode' : title}
+             </h2>
+             {!isPanicMode && <span className="text-xs font-mono bg-gray-100 px-2 py-1 rounded text-gray-500">Day {day}/{totalDays}</span>}
           </div>
           
           <div className="flex items-center gap-2">
+            <select 
+              value={currentAudio} 
+              onChange={(e) => changeAudio(e.target.value)}
+              className="text-xs border rounded-md p-1 bg-white text-gray-600 focus:outline-none focus:ring-1 focus:ring-teal-500"
+            >
+              {audioOptions.map(opt => (
+                <option key={opt} value={opt}>{opt.charAt(0).toUpperCase() + opt.slice(1)}</option>
+              ))}
+            </select>
+
             <button 
                 onClick={toggleAudio}
                 className={`text-xs px-3 py-1.5 rounded-full flex items-center gap-1 transition border
                   ${isPlaying ? 'bg-teal-50 border-teal-200 text-teal-700' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'}`}
               >
-                {isPlaying ? '🔊 Music On' : '🔇 Music Off'}
+                {isPlaying ? '🔊' : '🔇'}
             </button>
+            
             {messages.length > 2 && (
               <button 
                 onClick={downloadHistory}
@@ -199,13 +295,15 @@ export default function ChatInterface({ programType, day, systemPrompt, title, a
         
         {/* Session Progress Bar */}
         <div className="flex flex-col gap-1">
-           <div className="flex justify-between text-xs text-gray-400">
-             <span>Session Progress</span>
-             <span>{progress}%</span>
-           </div>
+           {!isPanicMode && (
+             <div className="flex justify-between text-xs text-gray-400">
+               <span>Session Progress</span>
+               <span>{progress}%</span>
+             </div>
+           )}
            <div className="w-full bg-gray-100 rounded-full h-1.5">
               <div 
-                className="bg-indigo-500 h-1.5 rounded-full transition-all duration-700 ease-out" 
+                className={`${isPanicMode ? 'bg-red-500 animate-pulse' : 'bg-indigo-500'} h-1.5 rounded-full transition-all duration-700 ease-out`} 
                 style={{ width: `${progress}%` }}
               ></div>
            </div>
@@ -247,20 +345,23 @@ export default function ChatInterface({ programType, day, systemPrompt, title, a
           
           {surveyStep === 'intro' ? (
             <div className="text-center max-w-md">
-              <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6">
+              <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6 ${isPanicMode ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
               </div>
-              <h3 className="text-2xl font-bold text-gray-800 mb-2">Session Complete!</h3>
+              <h3 className="text-2xl font-bold text-gray-800 mb-2">
+                {isPanicMode ? "Panic Subsided?" : "Session Complete!"}
+              </h3>
               <p className="text-gray-600 mb-8 leading-relaxed">
-                You've taken a great step towards mindful technology use. 
-                Let's take a moment to reflect on your experience.
+                {isPanicMode 
+                 ? "Take a deep breath. You faced the urge and you are still here." 
+                 : "You've taken a great step towards mindful technology use. Let's take a moment to reflect."}
               </p>
               <div className="flex flex-col gap-3">
                 <button 
                   onClick={() => setSurveyStep('form')}
-                  className="px-8 py-3 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold shadow-lg transition transform hover:scale-105"
+                  className={`px-8 py-3 text-white rounded-xl font-bold shadow-lg transition transform hover:scale-105 ${isPanicMode ? 'bg-red-600 hover:bg-red-700' : 'bg-teal-600 hover:bg-teal-700'}`}
                 >
                   Start Reflection
                 </button>
